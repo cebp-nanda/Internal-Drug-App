@@ -1,11 +1,39 @@
 import streamlit as st
 import pandas as pd
 import requests
-import pandas as pd
 
-drugs = pd.read_excel("RxNorm drug list.xlsx")
 
 st.set_page_config(layout='wide')
+
+# Define a secret password
+PASSWORD = "cebp"
+
+# Create a session state variable for authentication
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+# Login form
+if not st.session_state.authenticated:
+    st.title("🔒 Login Required")
+    password_input = st.text_input("Enter the password:", type="password")
+
+    if st.button("Login"):
+        if password_input == PASSWORD:
+            st.session_state.authenticated = True
+            st.success("✅ Authentication successful!")
+            st.rerun()  # ✅ Refresh to show the app
+        else:
+            st.error("❌ Incorrect password! Try again.")
+
+    # 🚨 **IMPORTANT: Stop execution here if the user is not logged in**
+    st.stop()
+
+# ✅ If user is authenticated, display the app
+st.title("🎉 Welcome to the Drug Lookup App!")
+
+
+
+drugs = pd.read_excel("RxNorm drug list.xlsx")
 
 def fetch_clinical_trials(drug_name):
     base_url = "https://clinicaltrials.gov/api/v2/studies"
