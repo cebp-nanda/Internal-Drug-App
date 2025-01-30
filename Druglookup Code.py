@@ -3,7 +3,7 @@ import pandas as pd
 import requests
 import pandas as pd
 
-drugs = pd.read_excel("C:/Users/vallamko/OneDrive - Oregon Health & Science University/Desktop/TIMS/RxNorm drug list.xlsx")
+drugs = pd.read_excel("RxNorm drug list.xlsx")
 
 st.set_page_config(layout='wide')
 
