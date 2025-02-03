@@ -29,7 +29,7 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ✅ If user is authenticated, display the app
-st.title("🎉 Welcome to the Drug Lookup App!")
+#st.title("🎉 Welcome to the Drug Lookup App!")
 
 
 
