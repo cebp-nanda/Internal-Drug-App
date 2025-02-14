@@ -3,3 +3,4 @@ pandas
 requests
 openpyxl
 streamlit-aggrid==0.3.4.post3
+streamlit-aggrid
