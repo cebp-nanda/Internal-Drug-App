@@ -6,7 +6,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 st.set_page_config(layout='wide')
 
 # Define a secret password
-PASSWORD = "1234"
+PASSWORD = "cebp-2025"
 
 # Create a session state variable for authentication
 if "authenticated" not in st.session_state:
