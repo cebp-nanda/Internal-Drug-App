@@ -6,7 +6,7 @@ from st_aggrid import AgGrid, GridOptionsBuilder
 st.set_page_config(layout='wide')
 
 # Define a secret password
-PASSWORD = "cebp"
+PASSWORD = "1234"
 
 # Create a session state variable for authentication
 if "authenticated" not in st.session_state:
@@ -31,13 +31,15 @@ if not st.session_state.authenticated:
 # ✅ If user is authenticated, display the app
 #st.title("🎉 Welcome to the Drug Lookup App!")
 
-
+ 
+ 
 
 drugs = pd.read_excel("RxNorm drug list.xlsx")
+brands = pd.read_csv("brandname_rxcui.csv")
 
 # ✅ Fetch Clinical Trials Data
 def fetch_clinical_trials(drug_name):
-    base_url = f"https://clinicaltrials.gov/api/v2/studies"
+    base_url = f'https://clinicaltrials.gov/api/v2/studies'
     
     params = {
         'query.term': drug_name,
@@ -60,7 +62,7 @@ def fetch_clinical_trials(drug_name):
 
             nct_id = identification_module.get('nctId', 'N/A')
             title = identification_module.get('briefTitle', 'N/A')
-            study_url = f"https://clinicaltrials.gov/study/{nct_id}?term={nct_id}&rank=1"
+            study_url = f'https://clinicaltrials.gov/study/{nct_id}?term={nct_id}&rank=1'
 
             record = {
                 'Drug Name': drug_name,
@@ -87,32 +89,51 @@ def fetch_clinical_trials(drug_name):
         return pd.DataFrame()
         
 def fetch_openfda_details(drug_name):
-    api_url = f"https://api.fda.gov/drug/label.json?search=openfda.generic_name:{drug_name}&limit=1&sort=effective_time:desc"
+
+    api_url = f'https://api.fda.gov/drug/label.json?search=openfda.generic_name:"{drug_name}"+OR+openfda.brand_name:"{drug_name}"&limit=10&sort=effective_time:desc'
+
     try:
         response = requests.get(api_url)
-        if response.status_code == 200:
-            data = response.json()
-            if "results" in data:
-                result = data["results"][0]
+        response.raise_for_status()  # Raise an error for non-200 responses
+
+        data = response.json()
+
+        if "results" in data and data["results"]:
+            results_list = []
+
+            for result in data["results"]:  # Iterate over all fetched records
                 openfda = result.get("openfda", {})
-                return {
+                # Convert 'effective_time' to proper date format
+                approval_date = result.get("effective_time", "N/A")
+                if approval_date != "N/A":
+                    try:
+                        approval_date = pd.to_datetime(approval_date, format="%Y%m%d").date()  # Convert YYYYMMDD to date
+                    except Exception:
+                        approval_date = "Invalid Date"  # Handle errors gracefully
+
+                results_list.append({
                     "Generic Name": openfda.get("generic_name", ["N/A"])[0],
                     "Brand Name": openfda.get("brand_name", ["N/A"])[0],
                     "Manufacturer": openfda.get("manufacturer_name", ["N/A"])[0],
-                    "Approval Date": result.get("effective_time", "N/A"),
-                    "Indication": result.get("indications_and_usage", ["N/A"])[0],
-                    "Mechanism of Action": result.get("mechanism_of_action", ["N/A"])[0],
-                    "Dose/Strength": result.get("dosage_and_administration", ["N/A"])[0],
+                    "Approval Date": approval_date,
+                    "Indication": result.get("indications_and_usage", ["N/A"])[0] if "indications_and_usage" in result else "N/A",
+                    "Mechanism of Action": result.get("mechanism_of_action", ["N/A"])[0] if "mechanism_of_action" in result else "N/A",
+                    "Dose/Strength": result.get("dosage_and_administration", ["N/A"])[0] if "dosage_and_administration" in result else "N/A",
                     "Formulation": result.get("dosage_form", "N/A"),
-                    "Boxed Warning": result.get("boxed_warning", ["N/A"])[0],
+                    "Boxed Warning": result.get("boxed_warning", ["N/A"])[0] if "boxed_warning" in result else "N/A",
                     "Biosimilar": openfda.get("product_type", ["N/A"])[0],
-                    "Pediatric Use": result.get("pediatric_use", ["N/A"])[0],
-                }
+                    "Pediatric Use": result.get("pediatric_use", ["N/A"])[0] if "pediatric_use" in result else "N/A",
+                })
+
+            return pd.DataFrame(results_list)  # ✅ Properly structured DataFrame
+        
         else:
-            st.error(f"Failed to fetch OpenFDA data for {drug_name}. Status Code: {response.status_code}")
-    except Exception as e:
-        st.error(f"Error fetching OpenFDA data for {drug_name}: {e}")
-    return None
+            return pd.DataFrame([{"Error": f"No data found for drug: {drug_name}"}])
+
+    except requests.exceptions.RequestException as e:
+        return pd.DataFrame([{"Error": f"Failed to fetch OpenFDA data for {drug_name}: {str(e)}"}])
+
+
 
 # Load Therapeutic Class Mapping (Prevent Error if File is Missing)
 try:
@@ -122,17 +143,18 @@ except FileNotFoundError:
     st.warning("⚠️ Warning: 'tc_tims.csv' file not found. Tooltips may not work properly.")
     tc_to_drugs = {}
 
-
+ 
 def fetch_rxcui(drug_name):
-    url = f"https://rxnav.nlm.nih.gov/REST/rxcui.json?name={drug_name}"
+    url = f'https://rxnav.nlm.nih.gov/REST/rxcui.json?name={drug_name}'
     response = requests.get(url)
     if response.status_code != 200:
         return None
     data = response.json()
     return data.get("idGroup", {}).get("rxnormId", [None])[0]
     
+    
 def fetch_therapeutic_class(rxcui, drug_name):
-    url = f"https://rxnav.nlm.nih.gov/REST/rxclass/class/byRxcui.json?rxcui={rxcui}&rela=has_therapeutic_class&classTypes=ATC1-4,VA"
+    url = f'https://rxnav.nlm.nih.gov/REST/rxclass/class/byRxcui.json?rxcui={rxcui}&rela=has_therapeutic_class&classTypes=ATC1-4,VA'
     response = requests.get(url)
     therapeutic_classes = []
     if response.status_code == 200:
@@ -191,7 +213,7 @@ def display_therapeutic_classes_with_tooltip(df):
     )
 
 def fetch_brand_names(rxcui, drug_name):
-    url = f"https://rxnav.nlm.nih.gov/REST/rxcui/{rxcui}/allrelated.json"
+    url = f'https://rxnav.nlm.nih.gov/REST/rxcui/{rxcui}/allrelated.json'
     response = requests.get(url)
     brands = []
     if response.status_code == 200:
@@ -204,7 +226,7 @@ def fetch_brand_names(rxcui, drug_name):
 
 def fetch_moa(rxcui, drug_name):
 
-    url = f"https://rxnav.nlm.nih.gov/REST/rxclass/class/byRxcui.json?rxcui={rxcui}&rela=has_mechanism_of_action&classTypes=MOA"
+    url = f'https://rxnav.nlm.nih.gov/REST/rxclass/class/byRxcui.json?rxcui={rxcui}&rela=has_mechanism_of_action&classTypes=MOA'
     response = requests.get(url)
     moa = []
     if response.status_code == 200:
@@ -219,7 +241,7 @@ def fetch_moa(rxcui, drug_name):
 
 def fetch_indications(rxcui, drug_name):
 
-    url = f"https://rxnav.nlm.nih.gov/REST/rxclass/class/byRxcui.json?rxcui={rxcui}&rela=may_treat&classTypes=DISEASE"
+    url = f'https://rxnav.nlm.nih.gov/REST/rxclass/class/byRxcui.json?rxcui={rxcui}&rela=may_treat&classTypes=DISEASE'
     response = requests.get(url)
     indications = []
     if response.status_code == 200:
@@ -246,20 +268,31 @@ def fetch_drug_details(drug_name):
     return details
     
 def run_app():
+
+
     st.title("Drug Database")
     #st.write("Search for drug details using ClinicalTrials and OpenFDA APIs.")
     
-    # Shared search bar for all tabs
+    # Add a radio button for search type selection
+    search_type = st.radio("Search by:", ["Drug Name", "Brand Name"], horizontal=True)
+
+    # Update options based on search type
+    if search_type == "Drug Name":
+        search_options = drugs["Drug name"].tolist()
+    else:
+            search_options = brands["Brand Name"].tolist()  # Assuming brand names are stored here
+
+    # Search bar for the selected type
     selected_drugs = st.multiselect(
-        "Search for Drugs:",
-        options=drugs["Drug name"].tolist(),
+        f"Search for {search_type}s:",
+        options=search_options,
         default=[]
     )
 
     # Tabs for different functionalities
-    tab1, tab2, tab3 = st.tabs(["RxNorm","Clinical Trials", "OpenFDA"])
-    
+    tab1, tab2, tab3 = st.tabs(["OpenFDA","Clinical Trials","RxNorm"])
     with tab2:
+
         if selected_drugs:
             all_clinical_trials = []
             for drug in selected_drugs:
@@ -271,8 +304,8 @@ def run_app():
                 clinical_trials_df = pd.concat(all_clinical_trials, ignore_index=True)
     
                 # ✅ Convert Date Columns to Datetime for Sorting
-                clinical_trials_df["Start Date"] = pd.to_datetime(clinical_trials_df["Start Date"], errors="coerce")
-                clinical_trials_df["Completion Date"] = pd.to_datetime(clinical_trials_df["Completion Date"], errors="coerce")
+                #clinical_trials_df["Start Date"] = pd.to_datetime(clinical_trials_df["Start Date"], errors="coerce")
+                #clinical_trials_df["Completion Date"] = pd.to_datetime(clinical_trials_df["Completion Date"], errors="coerce")
     
                 # ✅ Arrange Filters in One Row
                 col1, col2, col3 = st.columns(3)
@@ -322,31 +355,49 @@ def run_app():
         else:
             st.warning("🔍 Please select drugs to fetch Clinical Trials data.")
 
-    with tab3:
-        #st.subheader("OpenFDA Data")
-        if selected_drugs:
-            openfda_data = []
-            for drug in selected_drugs:
-                openfda_details = fetch_openfda_details(drug)
-                if openfda_details:
-                    openfda_data.append(openfda_details)
-            
-            if openfda_data:
-                openfda_df = pd.DataFrame(openfda_data)
-                st.write("### OpenFDA Data")
-                st.dataframe(openfda_df)
 
+    from st_aggrid import AgGrid, GridOptionsBuilder
+
+    with tab1:
+        if selected_drugs:
+            all_openfda_data = []
+
+            for drug in selected_drugs:
+                openfda_df = fetch_openfda_details(drug)
+                if not openfda_df.empty:
+                    openfda_df["Drug Name"] = drug  # Ensure we keep track of drug names
+                    all_openfda_data.append(openfda_df)
+
+            if all_openfda_data:
+                combined_openfda_df = pd.concat(all_openfda_data, ignore_index=True)
+
+                # ✅ Fix column order
+                expected_columns = ["Drug Name", "Generic Name", "Brand Name", "Manufacturer", "Approval Date",
+                                    "Indication", "Mechanism of Action", "Dose/Strength", "Formulation",
+                                    "Boxed Warning", "Biosimilar", "Pediatric Use"]
+                for col in expected_columns:
+                    if col not in combined_openfda_df.columns:
+                        combined_openfda_df[col] = "N/A"  # Fill missing columns to avoid errors
+
+                combined_openfda_df = combined_openfda_df[expected_columns]  # Reorder columns
+
+                st.write("### OpenFDA Data")
+                st.dataframe(combined_openfda_df)
+
+                # ✅ Download Button
                 st.download_button(
-                    label="Download OpenFDA Data",
-                    data=openfda_df.to_csv(index=False),
+                    label="📥 Download OpenFDA Data",
+                    data=combined_openfda_df.to_csv(index=False),
                     file_name="openfda_data.csv",
                     mime="text/csv"
                 )
             else:
-                st.warning("No OpenFDA data found for the selected drugs.")
+                st.warning("⚠️ No OpenFDA data found for the selected drugs.")
         else:
-            st.warning("Please select drugs to fetch OpenFDA data.")
-    with tab1:
+            st.warning("🔍 Please select drugs to fetch OpenFDA data.")
+
+
+    with tab3:
         
         if selected_drugs:
             all_brand_names = []
@@ -389,6 +440,6 @@ def run_app():
         else:
             st.error("Please select at least one drug to search.")
 
-
+ 
 if __name__ == "__main__":
     run_app()
